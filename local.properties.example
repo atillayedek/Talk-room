@@ -1,0 +1,5 @@
+sdk.dir=C:\\Users\\xeazr\\AppData\\Local\\Android\\Sdk
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-public-anon-key
+BACKEND_BASE_URL=https://your-talkroom-api.example.com
+AGORA_APP_ID=your-agora-app-id
