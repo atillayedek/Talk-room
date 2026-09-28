@@ -26,8 +26,6 @@ jobs:
           distribution: temurin
           cache: gradle
 
-      - uses: android-actions/setup-android@v3
-
       - name: Build Android APK
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
