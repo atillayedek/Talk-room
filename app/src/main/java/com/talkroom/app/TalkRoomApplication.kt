@@ -5,6 +5,8 @@ import com.talkroom.app.data.AppConfig
 import com.talkroom.app.data.SupabaseApi
 import com.talkroom.app.data.TalkRoomBackendApi
 import com.talkroom.app.data.createHttpClient
+import com.talkroom.app.data.SessionManager
+import com.talkroom.app.data.SessionStore
 
 class TalkRoomApplication : Application() {
     lateinit var container: AppContainer
@@ -19,9 +21,11 @@ class TalkRoomApplication : Application() {
             agoraAppId = BuildConfig.AGORA_APP_ID
         )
         val http = createHttpClient()
+        val supabaseApi = SupabaseApi(config, http)
         container = AppContainer(
             config = config,
-            supabaseApi = SupabaseApi(config, http),
+            supabaseApi = supabaseApi,
+            sessions = SessionManager(supabaseApi, SessionStore(this)),
             backendApi = TalkRoomBackendApi(config, http)
         )
     }
@@ -30,5 +34,6 @@ class TalkRoomApplication : Application() {
 data class AppContainer(
     val config: AppConfig,
     val supabaseApi: SupabaseApi,
+    val sessions: SessionManager,
     val backendApi: TalkRoomBackendApi
 )

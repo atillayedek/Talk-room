@@ -55,10 +55,30 @@ AGORA_APP_ID=your-agora-app-id
 Build:
 
 ```powershell
-gradle :app:assembleDebug
+.\gradlew.bat :app:assembleDebug :app:lintDebug
 ```
 
-This machine does not have global `gradle`; use the cached Gradle binary or generate a wrapper.
+Use the checked-in Gradle wrapper with JDK 21. CI reads `SUPABASE_URL` and
+`BACKEND_BASE_URL` from repository variables and `SUPABASE_ANON_KEY` from a
+repository secret. Only a publishable/anon key belongs in the Android app.
+
+## Authentication
+
+- HTTP error statuses are checked before decoding success models. Supabase's
+  `msg`, `message`, `error_description`, or `error` is shown instead of a serializer error.
+- With email confirmation enabled, signup can return only a user. The app then
+  stays signed out and asks the user to confirm the email before password login.
+- Sessions are encrypted with an Android Keystore AES-GCM key and restored on
+  startup. Passwords are never persisted. Android backup is disabled.
+- Authenticated profile, room, and Agora-token requests refresh expiring sessions
+  under a mutex. A 401 is retried once after refresh; network/server failures do
+  not discard the stored session. Invalid refresh tokens require a new login.
+- A successful login is retained when loading a profile or rooms fails. Refreshing
+  rooms retries both loads. Logout clears the device session even when offline;
+  server revocation requires connectivity and failure is reported.
+- Email confirmation and recovery delivery depend on the Supabase project's URL,
+  email templates, and SMTP configuration. Recovery emails use the configured
+  Supabase redirect; this change does not add an in-app reset-password callback.
 
 ## Production Notes
 

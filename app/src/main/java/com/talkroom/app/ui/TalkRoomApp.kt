@@ -69,7 +69,8 @@ fun TalkRoomApp(state: AppState, actions: AppActions) {
             }
             when {
                 state.configError != null -> Text("Bağlantı ayarları kullanılamıyor.", Modifier.padding(24.dp))
-                !state.signedIn -> AuthScreen(state.loading, actions)
+                state.restoringSession -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                !state.signedIn -> AuthScreen(state.loading, actions, state.confirmationEmail)
                 state.selectedRoom != null && state.agoraToken != null -> RoomCallScreen(state, actions)
                 state.activeTab == HomeTab.Profile -> ProfileScreen(state, actions)
                 state.activeTab == HomeTab.Admin && state.isAdmin -> Column(Modifier.padding(24.dp)) {
@@ -204,15 +205,19 @@ private fun RoomRow(room: Room, enabled: Boolean, join: (Room, String?) -> Unit)
 }
 
 @Composable
-private fun AuthScreen(loading: Boolean, actions: AppActions) {
+private fun AuthScreen(loading: Boolean, actions: AppActions, confirmationEmail: String?) {
     var register by rememberSaveable { mutableStateOf(false) }
     var email by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
+    LaunchedEffect(confirmationEmail) {
+        if (confirmationEmail != null) { register = false; password = ""; confirm = "" }
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Spacer(Modifier.height(12.dp))
         Wave(Modifier.size(64.dp, 48.dp))
         Title(if (register) "Sohbete katıl." else "Yeniden merhaba.", "Sesinle başlayan bağlantılar.")
+        if (confirmationEmail != null) Text("$confirmationEmail adresindeki onay bağlantısını açın. Ardından giriş yapabilirsiniz.", color = Emerald)
         Row { FilterChip(!register, { register = false }, { Text("Giriş yap") }); Spacer(Modifier.width(12.dp)); FilterChip(register, { register = true }, { Text("Hesap oluştur") }) }
         OutlinedTextField(email, { email = it }, label = { Text("E-posta") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth())
         OutlinedTextField(password, { password = it }, label = { Text("Şifre") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())

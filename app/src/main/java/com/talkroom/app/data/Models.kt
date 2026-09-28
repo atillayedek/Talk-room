@@ -16,8 +16,17 @@ data class AuthSession(
     @SerialName("access_token") val accessToken: String,
     @SerialName("refresh_token") val refreshToken: String? = null,
     @SerialName("expires_in") val expiresIn: Long? = null,
+    @SerialName("expires_at") val expiresAt: Long? = null,
     val user: SupabaseUser
 )
+
+sealed interface SignUpResult {
+    data class SignedIn(val session: AuthSession) : SignUpResult
+    data object ConfirmationRequired : SignUpResult
+}
+
+@Serializable
+data class RefreshTokenRequest(@SerialName("refresh_token") val refreshToken: String)
 
 @Serializable
 data class SupabaseUser(

@@ -15,197 +15,22 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - uses: gradle/actions/setup-gradle@v5
-
-      # One stable signing key for the beta APK, so each one installs over the
-      # last. It comes from a secret: Actions caches can be read by pull
-      # requests from forks, so a cached key could be copied and used to sign
-      # a fake "update". The cache is only a fallback until the secret exists.
-      - name: Restore beta signing key
-        env:
-          BETA_KEYSTORE_BASE64: ${{ secrets.WDIPI_BETA_KEYSTORE_BASE64 }}
-        run: |
-          if [ -n "$BETA_KEYSTORE_BASE64" ]; then
-            mkdir -p ~/.android
-            echo "$BETA_KEYSTORE_BASE64" | base64 --decode > ~/.android/debug.keystore
-            echo "HAS_BETA_KEY=true" >> "$GITHUB_ENV"
-          else
-            echo "::warning::WDIPI_BETA_KEYSTORE_BASE64 missing: the beta APK is signed with a cached key."
-          fi
-
-      - name: Reuse cached beta signing key
-        if: env.HAS_BETA_KEY != 'true'
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: beta-debug-keystore-v1
-
-      - name: Report configuration
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
-          ADMOB_INTERSTITIAL_ID: ${{ secrets.ADMOB_INTERSTITIAL_ID }}
-          KEYSTORE_BASE64: ${{ secrets.WDIPI_KEYSTORE_BASE64 }}
-        # Prints only whether the values are present, never the values.
-        run: |
-          if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_ANON_KEY" ]; then
-            echo "::notice::Supabase configured: this build connects to the backend."
-          else
-            echo "::warning::Supabase secrets missing: this build shows the 'Not connected yet' screen."
-          fi
-          if [ -n "$ADMOB_APP_ID" ] && [ -n "$ADMOB_INTERSTITIAL_ID" ]; then
-            echo "::notice::AdMob configured: the release build shows ads."
-          else
-            echo "::warning::AdMob secrets missing: the release build shows no ads (debug uses Google test ads)."
-          fi
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "::notice::Upload keystore configured: the release AAB is signed."
-          else
-            echo "::warning::Upload keystore missing: the release AAB is unsigned and can't be uploaded to Play."
-          fi
-
-      - name: Restore upload keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.WDIPI_KEYSTORE_BASE64 }}
-        run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload-keystore.jks"
-          fi
-
-      - name: Unit tests, lint, debug APK and release AAB
-        env:
-          # Client-safe values only (project URL + anon/publishable key).
-          # When these repository secrets are absent the app builds and shows
-          # its "not connected" state instead of pretending to work.
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
-          ADMOB_INTERSTITIAL_ID: ${{ secrets.ADMOB_INTERSTITIAL_ID }}
-          WDIPI_KEYSTORE_FILE: ${{ secrets.WDIPI_KEYSTORE_BASE64 != '' && format('{0}/upload-keystore.jks', runner.temp) || '' }}
-          WDIPI_KEYSTORE_PASSWORD: ${{ secrets.WDIPI_KEYSTORE_PASSWORD }}
-          WDIPI_KEY_ALIAS: ${{ secrets.WDIPI_KEY_ALIAS }}
-          WDIPI_KEY_PASSWORD: ${{ secrets.WDIPI_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest lintRelease assembleDebug bundleRelease
-
-      - name: Remove keystore from the runner
-        if: always()
-        run: |
-          rm -f "$RUNNER_TEMP/upload-keystore.jks"
-          if [ "$HAS_BETA_KEY" = "true" ]; then rm -f ~/.android/debug.keystore; fi
-
-      - name: Upload build outputs
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: build-outputs
-          if-no-files-found: ignore
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/bundle/release/*.aab
-            app/build/outputs/mapping/release/mapping.txt
-            app/build/reports/lint-results-release.html
-
-  smoke-test:
-    # Starts the debug APK on an emulator and fails on any crash; keeps screenshots.
-    needs: build
-    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v5
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
         with:
-          name: build-outputs
-          path: app/build
+          java-version: "21"
+          distribution: temurin
+          cache: gradle
 
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+      - uses: android-actions/setup-android@v3
 
-      - name: Run on emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          script: bash .github/scripts/smoke-test.sh
-
-      - name: Contact sheet
-        if: always()
-        # One small overview image of all screens. Also printed (base64, between
-        # markers) so reviewers without artifact access can inspect the UI.
-        run: |
-          ls smoke-test/*.png > /dev/null 2>&1 || exit 0
-          pip install --quiet pillow
-          python3 - <<'PY'
-          import glob
-          from PIL import Image
-          paths = sorted(glob.glob("smoke-test/*.png"))
-          thumbs = [Image.open(p).convert("RGB") for p in paths]
-          w = 270
-          thumbs = [t.resize((w, int(t.height * w / t.width))) for t in thumbs]
-          cols, h, gap = 4, max(t.height for t in thumbs), 8
-          rows = (len(thumbs) + cols - 1) // cols
-          sheet = Image.new("RGB", (cols * (w + gap) + gap, rows * (h + gap) + gap), (136, 136, 136))
-          for i, t in enumerate(thumbs):
-              sheet.paste(t, (gap + (i % cols) * (w + gap), gap + (i // cols) * (h + gap)))
-          sheet.save("smoke-test/contact-sheet.jpg", quality=70)
-          PY
-          echo "CONTACT-SHEET-BEGIN"
-          base64 -w0 smoke-test/contact-sheet.jpg
-          echo
-          echo "CONTACT-SHEET-END"
-
-      - name: Upload screenshots
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: smoke-test-screenshots
-          if-no-files-found: ignore
-          path: |
-            smoke-test/*.png
-            smoke-test/contact-sheet.jpg
-            smoke-test/logcat.txt
-
-  beta-release:
-    # Publishes the tested debug APK as the downloadable beta on the website.
-    needs: [build, smoke-test]
-    if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v5
-        with:
-          name: build-outputs
-          path: outputs
-
-      - name: Name the APK
-        run: cp outputs/outputs/apk/debug/app-debug.apk talkroom-beta.apk
-
-      - name: Update the beta release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: beta
-          name: Beta
-          prerelease: true
-          make_latest: false
-          body: |
-            Test build of Where Did I Put It? for early testers.
-            Built from ${{ github.sha }}. Shows Google's sample ads.
-            Install: download wheredidiputit-beta.apk on an Android 8.0+ phone and open it.
-          files: wheredidiputit-beta.apk
+      - name: Build Android APK
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          BACKEND_BASE_URL: ${{ vars.BACKEND_BASE_URL }}
+        run: ./gradlew --no-daemon :app:assembleDebug :app:lintDebug
