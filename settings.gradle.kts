@@ -16,4 +16,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "TalkRoomKotlin"
-include(":app", ":server")
+include(":app")
