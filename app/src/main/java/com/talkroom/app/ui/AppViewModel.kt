@@ -27,13 +27,13 @@ data class AppState(
     val selectedRoom: Room? = null,
     val agoraToken: AgoraTokenResponse? = null,
     val message: String? = null,
-    val activeTab: HomeTab = HomeTab.Rooms
+    val activeTab: HomeTab = HomeTab.Call
 ) {
     val signedIn: Boolean get() = session != null
     val isAdmin: Boolean get() = session?.user?.email?.lowercase() == AdminEmail
 }
 
-enum class HomeTab { Rooms, Profile, Diamonds, Admin }
+enum class HomeTab { Call, Rooms, Profile, Diamonds, Admin }
 
 interface AppActions {
     fun clearMessage()

@@ -46,11 +46,14 @@ fun TalkRoomApp(state: AppState, actions: AppActions) {
     }
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }, bottomBar = {
         if (state.signedIn && state.selectedRoom == null) {
-            NavigationBar(containerColor = Forest, tonalElevation = 0.dp) {
-                listOf(Triple(HomeTab.Rooms, "Sohbet", Icons.Outlined.GraphicEq),
-                    Triple(HomeTab.Profile, "Profil", Icons.Outlined.Person)).forEach { (tab, label, icon) ->
+            NavigationBar(containerColor = Emerald.copy(alpha = .035f), tonalElevation = 0.dp) {
+                listOf(Triple(HomeTab.Profile, "Profil", Icons.Outlined.AccountCircle),
+                    Triple(HomeTab.Call, "Ara", Icons.Outlined.PhoneInTalk),
+                    Triple(HomeTab.Rooms, "Odalar", Icons.Outlined.GridView)).forEach { (tab, label, icon) ->
                     NavigationBarItem(selected = state.activeTab == tab, onClick = { actions.setTab(tab) },
-                        icon = { Icon(icon, label) }, label = { Text(label) })
+                        icon = { Icon(icon, label, modifier = Modifier.size(24.dp)) },
+                        alwaysShowLabel = false, label = { Text(label, fontSize = 11.sp) },
+                        colors = NavigationBarItemDefaults.colors(indicatorColor = Emerald.copy(alpha = .13f), selectedIconColor = Emerald, unselectedIconColor = White))
                 }
                 if (state.isAdmin) NavigationBarItem(selected = state.activeTab == HomeTab.Admin,
                     onClick = { actions.setTab(HomeTab.Admin) }, icon = { Icon(Icons.Outlined.Shield, "Yönetim") }, label = { Text("Yönetim") })
@@ -59,11 +62,10 @@ fun TalkRoomApp(state: AppState, actions: AppActions) {
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.GraphicEq, null, tint = Emerald, modifier = Modifier.size(28.dp))
-                Spacer(Modifier.width(10.dp))
-                Text("talkroom", fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text("talk ", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text("room", color = Emerald, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
                 if (state.loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                else Icon(Icons.Outlined.Headphones, null, tint = White.copy(alpha = .6f))
             }
             when {
                 state.configError != null -> Text("Bağlantı ayarları kullanılamıyor.", Modifier.padding(24.dp))
@@ -92,29 +94,32 @@ private fun Wave(modifier: Modifier = Modifier, active: Boolean = false) {
     val transition = rememberInfiniteTransition(label = "voice")
     val pulse by transition.animateFloat(.65f, 1f, infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "pulse")
     Canvas(modifier) {
-        val bars = listOf(.24f, .5f, .8f, 1f, .62f, .87f, .4f)
+        val bars = listOf(.04f, .12f, .32f, .18f, .58f, .83f, .45f, 1f, .74f, .92f, .49f, .66f, .39f, .22f, .31f, .1f, .04f)
         bars.forEachIndexed { i, h ->
-            val x = size.width * (i + 1) / 8
+            val x = size.width * (i + 1) / (bars.size + 1)
             val height = size.height * h * if (active) pulse else 1f
-            drawLine(Emerald, Offset(x, (size.height - height) / 2), Offset(x, (size.height + height) / 2), size.width / 22, StrokeCap.Round)
+            drawLine(White, Offset(x, (size.height - height) / 2), Offset(x, (size.height + height) / 2), size.width / 65, StrokeCap.Round)
         }
     }
 }
 
 @Composable
-private fun CallCircle(enabled: Boolean, label: String, active: Boolean = false, onClick: () -> Unit) {
+private fun CallCircle(enabled: Boolean, label: String, active: Boolean = false, showWave: Boolean = true, onClick: () -> Unit) {
     Box(Modifier.size(248.dp), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
-            for (i in 1..12) drawCircle(Emerald.copy(alpha = .004f * (13 - i)), radius = size.minDimension * (.37f + i * .009f), style = Stroke(i * 2.dp.toPx()))
+            for (i in 14 downTo 1) drawCircle(Emerald.copy(alpha = .018f), radius = size.minDimension * .375f, style = Stroke((6 + i * 3).dp.toPx()))
             drawCircle(Emerald.copy(alpha = .17f), radius = size.minDimension * .49f, style = Stroke(1.dp.toPx()))
             drawCircle(Emerald.copy(alpha = .45f), radius = size.minDimension * .41f, style = Stroke(1.dp.toPx()))
         }
         Surface(onClick = onClick, enabled = enabled, shape = CircleShape,
-            color = Forest, border = androidx.compose.foundation.BorderStroke(2.dp, Emerald), modifier = Modifier.size(186.dp)) {
+            color = Forest, border = androidx.compose.foundation.BorderStroke(6.dp, Emerald), modifier = Modifier.size(186.dp)) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Wave(Modifier.size(66.dp, 46.dp), active)
-                Spacer(Modifier.height(20.dp))
-                Text(label, color = White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                if (showWave) {
+                    Wave(Modifier.size(66.dp, 46.dp), active)
+                    Spacer(Modifier.height(20.dp))
+                }
+                Text(label, color = White, fontWeight = FontWeight.Bold, fontSize = if (showWave) 16.sp else 24.sp,
+                    lineHeight = 27.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 16.dp))
             }
         }
     }
@@ -138,20 +143,28 @@ private fun RoomsScreen(state: AppState, actions: AppActions) {
         else { pendingRoom = room; pendingPassword = password; permission.launch(Manifest.permission.RECORD_AUDIO) }
     }
     val rooms = state.rooms.filter { filter == "Tümü" || (filter == "Açık" && !it.isPrivate) || (filter == "Şifreli" && it.isPrivate) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(24.dp))
-        Text("Bir ses. Yeni bir sohbet.", fontSize = 27.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(10.dp))
-        Text("Sana ait bir sohbet alanı.", color = White.copy(alpha = .6f), textAlign = TextAlign.Center)
-        Spacer(Modifier.height(25.dp))
-        CallCircle(!state.loading, if (state.loading) "Lütfen bekle…" else "Aramayı başlat", state.loading) {
-            state.rooms.firstOrNull { !it.isPrivate }?.let { join(it, null) } ?: run { create = true }
+    if (state.activeTab == HomeTab.Call) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val contentHeight = maxHeight.coerceAtLeast(480.dp)
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                Column(Modifier.fillMaxWidth().height(contentHeight).padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Spacer(Modifier.weight(.45f))
+                    Wave(Modifier.size(154.dp, 68.dp), state.loading)
+                    Spacer(Modifier.weight(.8f))
+                    CallCircle(!state.loading, if (state.loading) "BEKLE…" else "ARAMAYI\nBAŞLAT", state.loading, showWave = false) {
+                        state.rooms.firstOrNull { !it.isPrivate }?.let { join(it, null) } ?: run { create = true }
+                    }
+                    Spacer(Modifier.weight(.6f))
+                    Text("Yeni bir sesle tanış.", color = White, fontSize = 14.sp, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(5.dp))
+                    Text(if (state.rooms.any { !it.isPrivate }) "Açık bir odada sohbete katıl." else "İlk sohbet odasını sen aç.", color = White.copy(alpha = .65f), fontSize = 12.sp, textAlign = TextAlign.Center)
+                    if (permissionDenied) Text("Mikrofon izni gerekli.", modifier = Modifier.padding(top = 12.dp), textAlign = TextAlign.Center)
+                    Spacer(Modifier.weight(.45f))
+                }
+            }
         }
-        Spacer(Modifier.height(14.dp))
-        Text(if (state.rooms.any { !it.isPrivate }) "Açık bir odaya katıl" else "İlk sohbeti sen başlat", color = White.copy(alpha = .6f), fontSize = 13.sp)
-        if (permissionDenied) Text("Görüşmeye katılmak için mikrofon izni gerekli.", modifier = Modifier.padding(top = 12.dp), textAlign = TextAlign.Center)
-        Spacer(Modifier.height(32.dp))
-        HorizontalDivider(color = White.copy(alpha = .1f))
+    } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        if (permissionDenied) Text("Görüşmeye katılmak için mikrofon izni gerekli.", modifier = Modifier.padding(top = 12.dp))
         Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Sohbet odaları", fontSize = 19.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             IconButton(onClick = actions::refreshRooms, enabled = !state.loading) { Icon(Icons.Outlined.Refresh, "Odaları yenile") }
