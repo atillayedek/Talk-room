@@ -35,16 +35,17 @@ class AgoraRtcService(
         val rtcEngine = engine ?: RtcEngine.create(context.applicationContext, appId, handler).also {
             it.setChannelProfile(Constants.CHANNEL_PROFILE_COMMUNICATION)
             it.setClientRole(Constants.CLIENT_ROLE_BROADCASTER)
-            it.enableVideo()
+            it.enableAudio()
+            it.setDefaultAudioRoutetoSpeakerphone(true)
             engine = it
         }
         val options = ChannelMediaOptions().apply {
             channelProfile = Constants.CHANNEL_PROFILE_COMMUNICATION
             clientRoleType = Constants.CLIENT_ROLE_BROADCASTER
             publishMicrophoneTrack = true
-            publishCameraTrack = true
+            publishCameraTrack = false
             autoSubscribeAudio = true
-            autoSubscribeVideo = true
+            autoSubscribeVideo = false
         }
         rtcEngine.joinChannel(token, channelName, uid, options)
     }
@@ -55,6 +56,10 @@ class AgoraRtcService(
 
     fun muteVideo(muted: Boolean) {
         engine?.muteLocalVideoStream(muted)
+    }
+
+    fun setSpeaker(enabled: Boolean) {
+        engine?.setEnableSpeakerphone(enabled)
     }
 
     fun leave() {

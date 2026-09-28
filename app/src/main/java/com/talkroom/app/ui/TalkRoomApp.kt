@@ -1,367 +1,272 @@
 package com.talkroom.app.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.talkroom.app.data.Room
 import com.talkroom.app.rtc.AgoraRtcService
+import kotlinx.coroutines.delay
 
 @Composable
 fun TalkRoomApp(state: AppState, actions: AppActions) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) {
-        val message = state.message ?: return@LaunchedEffect
-        snackbar.showSnackbar(message)
-        actions.clearMessage()
+        state.message?.let { snackbar.showSnackbar(it); actions.clearMessage() }
     }
-
-    Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Header(state)
-            if (state.configError != null) {
-                ConfigError(state.configError)
-            } else if (!state.signedIn) {
-                AuthScreen(state.loading, actions)
-            } else if (state.selectedRoom != null && state.agoraToken != null) {
-                RoomCallScreen(state, actions)
-            } else {
-                HomeScreen(state, actions)
+    Scaffold(snackbarHost = { SnackbarHost(snackbar) }, bottomBar = {
+        if (state.signedIn && state.selectedRoom == null) {
+            NavigationBar(containerColor = Forest, tonalElevation = 0.dp) {
+                listOf(Triple(HomeTab.Rooms, "Sohbet", Icons.Outlined.GraphicEq),
+                    Triple(HomeTab.Profile, "Profil", Icons.Outlined.Person)).forEach { (tab, label, icon) ->
+                    NavigationBarItem(selected = state.activeTab == tab, onClick = { actions.setTab(tab) },
+                        icon = { Icon(icon, label) }, label = { Text(label) })
+                }
+                if (state.isAdmin) NavigationBarItem(selected = state.activeTab == HomeTab.Admin,
+                    onClick = { actions.setTab(HomeTab.Admin) }, icon = { Icon(Icons.Outlined.Shield, "Yönetim") }, label = { Text("Yönetim") })
+            }
+        }
+    }) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.GraphicEq, null, tint = Emerald, modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("talkroom", fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (state.loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                else Icon(Icons.Outlined.Headphones, null, tint = White.copy(alpha = .6f))
+            }
+            when {
+                state.configError != null -> Text("Bağlantı ayarları kullanılamıyor.", Modifier.padding(24.dp))
+                !state.signedIn -> AuthScreen(state.loading, actions)
+                state.selectedRoom != null && state.agoraToken != null -> RoomCallScreen(state, actions)
+                state.activeTab == HomeTab.Profile -> ProfileScreen(state, actions)
+                state.activeTab == HomeTab.Admin && state.isAdmin -> Column(Modifier.padding(24.dp)) {
+                    Title("Yönetim", "${state.rooms.size} oda")
+                    OutlinedButton(onClick = actions::refreshRooms, enabled = !state.loading) { Text("Odaları yenile") }
+                }
+                else -> RoomsScreen(state, actions)
             }
         }
     }
 }
 
 @Composable
-private fun Header(state: AppState) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column {
-            Text("TalkRoom", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(
-                state.profile?.username ?: state.session?.user?.email ?: "Güvenli sesli odalar",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+private fun Title(title: String, subtitle: String) {
+    Text(title, fontSize = 30.sp, lineHeight = 38.sp, fontWeight = FontWeight.SemiBold)
+    Spacer(Modifier.height(8.dp))
+    Text(subtitle, color = White.copy(alpha = .6f), fontSize = 14.sp, lineHeight = 22.sp)
+}
+
+@Composable
+private fun Wave(modifier: Modifier = Modifier, active: Boolean = false) {
+    val transition = rememberInfiniteTransition(label = "voice")
+    val pulse by transition.animateFloat(.65f, 1f, infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "pulse")
+    Canvas(modifier) {
+        val bars = listOf(.24f, .5f, .8f, 1f, .62f, .87f, .4f)
+        bars.forEachIndexed { i, h ->
+            val x = size.width * (i + 1) / 8
+            val height = size.height * h * if (active) pulse else 1f
+            drawLine(Emerald, Offset(x, (size.height - height) / 2), Offset(x, (size.height + height) / 2), size.width / 22, StrokeCap.Round)
         }
-        if (state.loading) CircularProgressIndicator(modifier = Modifier.width(28.dp))
     }
 }
 
 @Composable
-private fun ConfigError(message: String) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Konfigürasyon eksik", fontWeight = FontWeight.Bold)
-            Text(message)
-            Text("kotlin/local.properties içine Supabase, backend ve Agora değerlerini ekleyin.")
+private fun CallCircle(enabled: Boolean, label: String, active: Boolean = false, onClick: () -> Unit) {
+    Box(Modifier.size(248.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            for (i in 1..12) drawCircle(Emerald.copy(alpha = .004f * (13 - i)), radius = size.minDimension * (.37f + i * .009f), style = Stroke(i * 2.dp.toPx()))
+            drawCircle(Emerald.copy(alpha = .17f), radius = size.minDimension * .49f, style = Stroke(1.dp.toPx()))
+            drawCircle(Emerald.copy(alpha = .45f), radius = size.minDimension * .41f, style = Stroke(1.dp.toPx()))
+        }
+        Surface(onClick = onClick, enabled = enabled, shape = CircleShape,
+            color = Forest, border = androidx.compose.foundation.BorderStroke(2.dp, Emerald), modifier = Modifier.size(186.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Wave(Modifier.size(66.dp, 46.dp), active)
+                Spacer(Modifier.height(20.dp))
+                Text(label, color = White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            }
         }
     }
+}
+
+@Composable
+private fun RoomsScreen(state: AppState, actions: AppActions) {
+    var filter by rememberSaveable { mutableStateOf("Tümü") }
+    var create by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
+    var pendingRoom by remember { mutableStateOf<Room?>(null) }
+    var pendingPassword by remember { mutableStateOf<String?>(null) }
+    var permissionDenied by remember { mutableStateOf(false) }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) pendingRoom?.let { actions.joinRoom(it, pendingPassword) }
+        permissionDenied = !granted
+        pendingRoom = null
+    }
+    val join: (Room, String?) -> Unit = { room, password ->
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) actions.joinRoom(room, password)
+        else { pendingRoom = room; pendingPassword = password; permission.launch(Manifest.permission.RECORD_AUDIO) }
+    }
+    val rooms = state.rooms.filter { filter == "Tümü" || (filter == "Açık" && !it.isPrivate) || (filter == "Şifreli" && it.isPrivate) }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(Modifier.height(24.dp))
+        Text("Bir ses. Yeni bir sohbet.", fontSize = 27.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(10.dp))
+        Text("Sana ait bir sohbet alanı.", color = White.copy(alpha = .6f), textAlign = TextAlign.Center)
+        Spacer(Modifier.height(25.dp))
+        CallCircle(!state.loading, if (state.loading) "Lütfen bekle…" else "Aramayı başlat", state.loading) {
+            state.rooms.firstOrNull { !it.isPrivate }?.let { join(it, null) } ?: run { create = true }
+        }
+        Spacer(Modifier.height(14.dp))
+        Text(if (state.rooms.any { !it.isPrivate }) "Açık bir odaya katıl" else "İlk sohbeti sen başlat", color = White.copy(alpha = .6f), fontSize = 13.sp)
+        if (permissionDenied) Text("Görüşmeye katılmak için mikrofon izni gerekli.", modifier = Modifier.padding(top = 12.dp), textAlign = TextAlign.Center)
+        Spacer(Modifier.height(32.dp))
+        HorizontalDivider(color = White.copy(alpha = .1f))
+        Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Sohbet odaları", fontSize = 19.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            IconButton(onClick = actions::refreshRooms, enabled = !state.loading) { Icon(Icons.Outlined.Refresh, "Odaları yenile") }
+            IconButton(onClick = { create = true }, enabled = !state.loading) { Icon(Icons.Outlined.Add, "Oda oluştur", tint = Emerald) }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Tümü", "Açık", "Şifreli").forEach { label -> FilterChip(selected = label == filter, onClick = { filter = label }, label = { Text(label) }) }
+        }
+        if (rooms.isEmpty()) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Forum, null, tint = Emerald)
+                Spacer(Modifier.width(14.dp))
+                Column { Text("Henüz oda yok", fontWeight = FontWeight.Medium); Text("Yeni bir sohbet için yer var.", color = White.copy(alpha = .6f), fontSize = 13.sp) }
+            }
+        }
+        rooms.forEach { room -> key(room.id) { RoomRow(room, !state.loading, join) } }
+        Spacer(Modifier.height(20.dp))
+    }
+    if (create) CreateRoomDialog({ create = false }) { name, password -> create = false; actions.createRoom(name, password) }
+}
+
+@Composable
+private fun RoomRow(room: Room, enabled: Boolean, join: (Room, String?) -> Unit) {
+    var password by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(46.dp).background(Emerald.copy(alpha = .08f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+            Icon(if (room.isPrivate) Icons.Outlined.Lock else Icons.Outlined.GraphicEq, null, tint = Emerald)
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(room.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("${room.memberCount} kişi · ${if (room.isPrivate) "Şifreli" else "Açık oda"}", fontSize = 12.sp, color = White.copy(alpha = .6f))
+        }
+        IconButton(onClick = { if (room.isPrivate) password = true else join(room, null) }, enabled = enabled) { Icon(Icons.Outlined.ArrowForward, "${room.name} odasına katıl", tint = Emerald) }
+    }
+    HorizontalDivider(color = White.copy(alpha = .08f))
+    if (password) PasswordDialog(room.name, { password = false }) { password = false; join(room, it) }
 }
 
 @Composable
 private fun AuthScreen(loading: Boolean, actions: AppActions) {
-    var register by remember { mutableStateOf(false) }
-    var email by remember { mutableStateOf("") }
+    var register by rememberSaveable { mutableStateOf(false) }
+    var email by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
-
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = !register, onClick = { register = false }, label = { Text("Giriş") })
-                FilterChip(selected = register, onClick = { register = true }, label = { Text("Kayıt") })
-            }
-            OutlinedTextField(email, { email = it }, label = { Text("E-posta") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(
-                password,
-                { password = it },
-                label = { Text("Şifre") },
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth()
-            )
-            if (register) {
-                OutlinedTextField(
-                    confirm,
-                    { confirm = it },
-                    label = { Text("Şifre tekrar") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            Button(
-                enabled = !loading,
-                onClick = {
-                    if (register) {
-                        if (password == confirm) actions.signUp(email, password)
-                    } else {
-                        actions.signIn(email, password)
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (register) "Hesap oluştur" else "Giriş yap")
-            }
-            TextButton(onClick = { actions.recoverPassword(email) }) {
-                Text("Şifremi sıfırla")
-            }
-        }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Spacer(Modifier.height(12.dp))
+        Wave(Modifier.size(64.dp, 48.dp))
+        Title(if (register) "Sohbete katıl." else "Yeniden merhaba.", "Sesinle başlayan bağlantılar.")
+        Row { FilterChip(!register, { register = false }, { Text("Giriş yap") }); Spacer(Modifier.width(12.dp)); FilterChip(register, { register = true }, { Text("Hesap oluştur") }) }
+        OutlinedTextField(email, { email = it }, label = { Text("E-posta") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(password, { password = it }, label = { Text("Şifre") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+        if (register) OutlinedTextField(confirm, { confirm = it }, label = { Text("Şifre tekrar") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), isError = confirm.isNotEmpty() && confirm != password, modifier = Modifier.fillMaxWidth())
+        Button(onClick = { if (register) actions.signUp(email.trim(), password) else actions.signIn(email.trim(), password) },
+            enabled = !loading && email.isNotBlank() && password.isNotEmpty() && (!register || (password == confirm && password.length >= 6)),
+            shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth().height(54.dp)) { Text(if (loading) "Lütfen bekle…" else if (register) "Hesap oluştur" else "Giriş yap") }
+        TextButton(onClick = { actions.recoverPassword(email.trim()) }, enabled = !loading && email.isNotBlank()) { Text("Şifremi unuttum") }
     }
-}
-
-@Composable
-private fun HomeScreen(state: AppState, actions: AppActions) {
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = state.activeTab == HomeTab.Rooms,
-                    onClick = { actions.setTab(HomeTab.Rooms) },
-                    label = { Text("Odalar") },
-                    icon = {}
-                )
-                NavigationBarItem(
-                    selected = state.activeTab == HomeTab.Profile,
-                    onClick = { actions.setTab(HomeTab.Profile) },
-                    label = { Text("Profil") },
-                    icon = {}
-                )
-                NavigationBarItem(
-                    selected = state.activeTab == HomeTab.Diamonds,
-                    onClick = { actions.setTab(HomeTab.Diamonds) },
-                    label = { Text("Elmas") },
-                    icon = {}
-                )
-                if (state.isAdmin) {
-                    NavigationBarItem(
-                        selected = state.activeTab == HomeTab.Admin,
-                        onClick = { actions.setTab(HomeTab.Admin) },
-                        label = { Text("Admin") },
-                        icon = {}
-                    )
-                }
-            }
-        }
-    ) { padding ->
-        Column(Modifier.padding(padding), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            when (state.activeTab) {
-                HomeTab.Rooms -> RoomsScreen(state.rooms, state.loading, actions)
-                HomeTab.Profile -> ProfileScreen(state, actions)
-                HomeTab.Diamonds -> DiamondsScreen()
-                HomeTab.Admin -> AdminScreen(state, actions)
-            }
-        }
-    }
-}
-
-@Composable
-private fun RoomsScreen(rooms: List<Room>, loading: Boolean, actions: AppActions) {
-    var filter by remember { mutableStateOf("Tümü") }
-    var showCreate by remember { mutableStateOf(false) }
-    val filtered = when (filter) {
-        "Açık" -> rooms.filter { !it.isPrivate }
-        "Şifreli" -> rooms.filter { it.isPrivate }
-        else -> rooms
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("Tümü", "Açık", "Şifreli").forEach {
-            FilterChip(selected = filter == it, onClick = { filter = it }, label = { Text(it) })
-        }
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { showCreate = true }) { Text("Oda oluştur") }
-        OutlinedButton(onClick = actions::refreshRooms, enabled = !loading) { Text("Yenile") }
-    }
-    if (filtered.isEmpty()) {
-        Text("Gösterilecek oda yok.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-    } else {
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(filtered, key = { it.id }) { room ->
-                RoomRow(room, actions)
-            }
-        }
-    }
-    if (showCreate) CreateRoomDialog(
-        onDismiss = { showCreate = false },
-        onCreate = { name, password ->
-            showCreate = false
-            actions.createRoom(name, password)
-        }
-    )
-}
-
-@Composable
-private fun RoomRow(room: Room, actions: AppActions) {
-    var passwordDialog by remember { mutableStateOf(false) }
-    Card(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(room.name, fontWeight = FontWeight.Bold)
-                Text(
-                    "${room.memberCount} kişi • ${if (room.isPrivate) "şifreli" else "herkese açık"}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Button(onClick = { if (room.isPrivate) passwordDialog = true else actions.joinRoom(room, null) }) {
-                Text("Katıl")
-            }
-        }
-    }
-    if (passwordDialog) PasswordDialog(
-        title = "${room.name} odasına giriş",
-        onDismiss = { passwordDialog = false },
-        onSubmit = {
-            passwordDialog = false
-            actions.joinRoom(room, it)
-        }
-    )
 }
 
 @Composable
 private fun ProfileScreen(state: AppState, actions: AppActions) {
-    var username by remember(state.profile?.username) { mutableStateOf(state.profile?.username.orEmpty()) }
+    var name by remember(state.profile?.username) { mutableStateOf(state.profile?.username.orEmpty()) }
     var bio by remember(state.profile?.bio) { mutableStateOf(state.profile?.bio.orEmpty()) }
     var website by remember(state.profile?.website) { mutableStateOf(state.profile?.website.orEmpty()) }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedTextField(username, { username = it }, label = { Text("Kullanıcı adı") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(bio, { bio = it }, label = { Text("Bio") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(website, { website = it }, label = { Text("Website") }, modifier = Modifier.fillMaxWidth())
-            Button(onClick = { actions.saveProfile(username, bio, website) }) { Text("Kaydet") }
-            OutlinedButton(onClick = actions::signOut) { Text("Çıkış yap") }
-        }
-    }
-}
-
-@Composable
-private fun DiamondsScreen() {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        listOf("50 Elmas" to "₺19.99", "150 Elmas" to "₺49.99", "500 Elmas" to "₺149.99").forEach { (label, price) ->
-            Card(Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(label, fontWeight = FontWeight.Bold)
-                    Text(price, color = MaterialTheme.colorScheme.primary)
-                }
-            }
-        }
-        Text("Ödeme sağlayıcısı bağlanana kadar satın alma butonu gösterilmez.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun AdminScreen(state: AppState, actions: AppActions) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("God Mode", fontWeight = FontWeight.Bold)
-            Text("Toplam oda: ${state.rooms.size}")
-            Text("Aktif kullanıcı: ${state.profile?.email.orEmpty()}")
-            OutlinedButton(onClick = actions::refreshRooms) { Text("Oda verisini yenile") }
-        }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Box(Modifier.size(72.dp).border(1.dp, Emerald, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Person, null, tint = Emerald, modifier = Modifier.size(32.dp)) }
+        Title("Senin alanın", state.profile?.username ?: "Profil")
+        OutlinedTextField(name, { name = it }, label = { Text("Kullanıcı adı") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(bio, { bio = it }, label = { Text("Hakkımda") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(website, { website = it }, label = { Text("Web sitesi") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Button(onClick = { actions.saveProfile(name, bio, website) }, enabled = !state.loading && name.isNotBlank(), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Değişiklikleri kaydet") }
+        TextButton(onClick = actions::signOut, enabled = !state.loading) { Icon(Icons.Outlined.Logout, null); Spacer(Modifier.width(8.dp)); Text("Çıkış yap") }
     }
 }
 
 @Composable
 private fun RoomCallScreen(state: AppState, actions: AppActions) {
     val context = LocalContext.current
-    val room = state.selectedRoom ?: return
     val token = state.agoraToken ?: return
+    val room = state.selectedRoom ?: return
     var connected by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var micEnabled by remember { mutableStateOf(true) }
-    var videoEnabled by remember { mutableStateOf(true) }
-    val service = remember(token.token) {
-        AgoraRtcService(context, token.appId)
-    }
+    var mic by remember { mutableStateOf(true) }
+    var speaker by remember { mutableStateOf(true) }
+    var seconds by remember { mutableIntStateOf(0) }
+    val service = remember(token.token) { AgoraRtcService(context, token.appId) }
     LaunchedEffect(token.token) {
-        service.join(
-            token = token.token,
-            channelName = token.channelName,
-            uid = token.uid,
-            onJoined = {
-                connected = true
-                error = null
-            },
-            onError = {
-                connected = false
-                error = it
-            }
-        )
+        runCatching { service.join(token.token, token.channelName, token.uid, { connected = true; error = null }, { connected = false; error = it }) }.onFailure { error = "Bağlantı kurulamadı." }
     }
-    DisposableEffect(Unit) {
-        onDispose { service.release() }
-    }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(room.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(if (connected) "Odadasın" else error ?: "Bağlanıyor")
-            Text("Kanal: ${token.channelName}")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    micEnabled = !micEnabled
-                    service.muteAudio(!micEnabled)
-                }) {
-                    Text(if (micEnabled) "Mikrofon açık" else "Mikrofon kapalı")
-                }
-                Button(onClick = {
-                    videoEnabled = !videoEnabled
-                    service.muteVideo(!videoEnabled)
-                }) {
-                    Text(if (videoEnabled) "Kamera açık" else "Kamera kapalı")
-                }
-            }
-            OutlinedButton(onClick = {
-                service.leave()
-                actions.leaveCurrentRoom()
-            }) { Text("Odadan çık") }
+    LaunchedEffect(connected) { if (connected) while (true) { delay(1000); seconds++ } }
+    DisposableEffect(service) { onDispose { service.release() } }
+    BackHandler { actions.leaveCurrentRoom() }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(Modifier.height(26.dp))
+        Text(if (connected) "GÖRÜŞMEDE" else "BAĞLANTI", color = Emerald, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(14.dp))
+        Text(room.name, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(36.dp))
+        CallCircle(false, if (connected) "%02d:%02d".format(seconds / 60, seconds % 60) else "Bağlanıyor…", connected) {}
+        Spacer(Modifier.height(18.dp))
+        Text(error ?: if (connected) "Sesli odadasın" else "Odaya bağlanılıyor", color = White.copy(alpha = .6f), textAlign = TextAlign.Center)
+        Spacer(Modifier.height(42.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+            CallControl(if (mic) Icons.Outlined.Mic else Icons.Outlined.MicOff, if (mic) "Mikrofon" else "Sessiz", !mic) { mic = !mic; service.muteAudio(!mic) }
+            CallControl(Icons.Outlined.VolumeUp, "Hoparlör", speaker) { speaker = !speaker; service.setSpeaker(speaker) }
+            CallControl(Icons.Outlined.CallEnd, "Ayrıl", true) { actions.leaveCurrentRoom() }
         }
+    }
+}
+
+@Composable
+private fun CallControl(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        FilledIconButton(onClick, modifier = Modifier.size(60.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = if (selected) Emerald else White.copy(alpha = .08f), contentColor = if (selected) Forest else White)) { Icon(icon, label) }
+        Spacer(Modifier.height(10.dp)); Text(label, fontSize = 12.sp, color = White.copy(alpha = .7f))
     }
 }
 
@@ -369,39 +274,16 @@ private fun RoomCallScreen(state: AppState, actions: AppActions) {
 private fun CreateRoomDialog(onDismiss: () -> Unit, onCreate: (String, String?) -> Unit) {
     var name by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Oda oluştur") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Oda adı") })
-                OutlinedTextField(password, { password = it }, label = { Text("Şifre (opsiyonel)") })
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onCreate(name, password) }, enabled = name.isNotBlank()) { Text("Aç") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("İptal") } }
-    )
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Yeni sohbet odası") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(name, { name = it }, label = { Text("Oda adı") }, singleLine = true)
+            OutlinedTextField(password, { password = it }, label = { Text("Şifre (isteğe bağlı)") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+        }
+    }, confirmButton = { TextButton(onClick = { onCreate(name.trim(), password.takeIf { it.isNotBlank() }) }, enabled = name.isNotBlank()) { Text("Oluştur") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } })
 }
 
 @Composable
 private fun PasswordDialog(title: String, onDismiss: () -> Unit, onSubmit: (String) -> Unit) {
     var password by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            OutlinedTextField(
-                password,
-                { password = it },
-                label = { Text("Oda şifresi") },
-                visualTransformation = PasswordVisualTransformation()
-            )
-        },
-        confirmButton = {
-            Button(onClick = { onSubmit(password) }, enabled = password.isNotBlank()) { Text("Giriş") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("İptal") } }
-    )
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { OutlinedTextField(password, { password = it }, label = { Text("Oda şifresi") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) }, confirmButton = { TextButton(onClick = { onSubmit(password) }, enabled = password.isNotBlank()) { Text("Katıl") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } })
 }
