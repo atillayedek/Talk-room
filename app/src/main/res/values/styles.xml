@@ -1,5 +1,0 @@
-<resources>
-    <style name="Theme.TalkRoom" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowActionModeOverlay">true</item>
-    </style>
-</resources>

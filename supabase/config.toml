@@ -1,4 +1,0 @@
-project_id = "talkroom"
-
-[functions.talkroom]
-verify_jwt = false
