@@ -27,11 +27,13 @@ create table if not exists public.room_members (
 );
 
 create index if not exists rooms_created_at_idx on public.rooms(created_at desc);
+create index if not exists rooms_owner_id_idx on public.rooms(owner_id);
 create index if not exists room_members_user_id_idx on public.room_members(user_id);
 
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   new.updated_at = now();
@@ -58,14 +60,14 @@ drop policy if exists "Users insert own profile" on public.profiles;
 create policy "Users insert own profile"
 on public.profiles for insert
 to authenticated
-with check (auth.uid() = id);
+with check ((select auth.uid()) = id);
 
 drop policy if exists "Users update own profile" on public.profiles;
 create policy "Users update own profile"
 on public.profiles for update
 to authenticated
-using (auth.uid() = id)
-with check (auth.uid() = id);
+using ((select auth.uid()) = id)
+with check ((select auth.uid()) = id);
 
 drop policy if exists "Rooms are readable by authenticated users" on public.rooms;
 create policy "Rooms are readable by authenticated users"
@@ -77,7 +79,7 @@ drop policy if exists "Members read own memberships" on public.room_members;
 create policy "Members read own memberships"
 on public.room_members for select
 to authenticated
-using (auth.uid() = user_id);
+using ((select auth.uid()) = user_id);
 
 -- Room creation, membership writes, password hash checks, and Agora token access
 -- are intentionally handled by the Kotlin backend with the service-role key.

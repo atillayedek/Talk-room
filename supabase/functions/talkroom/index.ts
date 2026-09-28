@@ -40,9 +40,6 @@ type RoomResponse = {
 const supabaseUrl = requiredEnv("SUPABASE_URL").replace(/\/$/, "");
 const supabaseAnonKey = requiredEnv("SUPABASE_ANON_KEY");
 const supabaseServiceRoleKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
-const agoraAppId = requiredEnv("AGORA_APP_ID");
-const agoraAppCertificate = requiredEnv("AGORA_APP_CERTIFICATE");
-const agoraTokenTtlSeconds = Number(Deno.env.get("AGORA_TOKEN_TTL_SECONDS") ?? "3600");
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
@@ -105,6 +102,9 @@ Deno.serve(async (request) => {
     }
 
     if (request.method === "POST" && route === "/agora/token") {
+      const agoraAppId = requiredEnv("AGORA_APP_ID");
+      const agoraAppCertificate = requiredEnv("AGORA_APP_CERTIFICATE");
+      const agoraTokenTtlSeconds = Number(Deno.env.get("AGORA_TOKEN_TTL_SECONDS") ?? "3600");
       const body = await request.json().catch(() => ({}));
       const roomId = String(body.room_id ?? "");
       const channelName = String(body.channel_name ?? "");

@@ -14,7 +14,7 @@ Native Kotlin rewrite of the original Flutter/Node TalkRoom prototype.
 
 ## Configure Supabase
 
-1. Create a Supabase project.
+1. Use the created Supabase project: `xcqcaaejpjumhhaqqwmd`.
 2. Run `supabase/schema.sql` in the Supabase SQL editor.
 3. Enable email/password auth in Supabase Auth.
 4. Copy the project URL, anon key, and service-role key.
@@ -37,7 +37,7 @@ supabase functions deploy talkroom
 Function base URL:
 
 ```text
-https://your-project-ref.supabase.co/functions/v1/talkroom
+https://xcqcaaejpjumhhaqqwmd.supabase.co/functions/v1/talkroom
 ```
 
 ## Configure Android

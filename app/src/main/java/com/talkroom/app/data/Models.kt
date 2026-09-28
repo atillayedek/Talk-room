@@ -97,6 +97,5 @@ data class AppConfig(
         require(supabaseUrl.startsWith("https://")) { "SUPABASE_URL eksik veya geçersiz." }
         require(supabaseAnonKey.length > 20) { "SUPABASE_ANON_KEY eksik." }
         require(backendBaseUrl.startsWith("http")) { "BACKEND_BASE_URL eksik veya geçersiz." }
-        require(agoraAppId.length >= 16) { "AGORA_APP_ID eksik." }
     }
 }
